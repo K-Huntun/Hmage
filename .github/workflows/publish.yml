@@ -1,0 +1,31 @@
+name: Publish to Maven Central
+run-name: Release run ${{ github.run_number }} # Enumerates entries in the "workflow runs" view
+on:
+  workflow_dispatch:
+  release:
+    types: [ created ]
+jobs:
+  release: # Arbitrarily chosen
+    name: Release # Arbitrarily chosen
+    runs-on: macOS-latest # May also run on other kinds of distros
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Setup Java
+        uses: actions/setup-java@v3 # Does also set up Maven and GPG
+        with:
+          distribution: 'temurin' # As good as any other, see: https://github.com/actions/setup-java#supported-distributions 
+          java-package: 'jdk'
+          java-version: '11'
+          # check-latest: true
+          # cache: 'maven'
+      - name: Publish
+        run: ./gradlew publishAllPublicationsToSonatypeRepository
+        env:
+          SIGN_KEY_ID: ${{ secrets.SIGN_KEY_ID }}
+          SIGN_PASSWORD: ${{ secrets.SIGN_PASSWORD }}
+          SIGN_SECRET_KEY: ${{ secrets.SIGN_SECRET_KEY }}
+          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+
+

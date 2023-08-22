@@ -1,0 +1,21 @@
+PODS:
+  - commonui (1.0)
+  - hmage (1.0)
+
+DEPENDENCIES:
+  - commonui (from `../commonui`)
+  - hmage (from `../hmage`)
+
+EXTERNAL SOURCES:
+  commonui:
+    :path: "../commonui"
+  hmage:
+    :path: "../hmage"
+
+SPEC CHECKSUMS:
+  commonui: 5b60b6a956b6bc618371ebe3e9454ef711a566cd
+  hmage: adb463fb961bc5af79c43b7ac462acba49674245
+
+PODFILE CHECKSUM: c0d00432caf19617d8d7460afe2ac0eec882f325
+
+COCOAPODS: 1.12.1
