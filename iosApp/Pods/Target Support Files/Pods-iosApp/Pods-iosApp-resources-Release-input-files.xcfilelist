@@ -1,3 +1,2 @@
 ${PODS_ROOT}/Target Support Files/Pods-iosApp/Pods-iosApp-resources.sh
-${PODS_ROOT}/../../commonui/build/compose/ios/commonui/compose-resources
 ${PODS_ROOT}/../../hmage/build/compose/ios/hmage/compose-resources

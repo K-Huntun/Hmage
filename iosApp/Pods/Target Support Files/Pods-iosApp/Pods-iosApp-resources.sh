@@ -97,11 +97,9 @@ EOM
   esac
 }
 if [[ "$CONFIGURATION" == "Debug" ]]; then
-  install_resource "${PODS_ROOT}/../../commonui/build/compose/ios/commonui/compose-resources"
   install_resource "${PODS_ROOT}/../../hmage/build/compose/ios/hmage/compose-resources"
 fi
 if [[ "$CONFIGURATION" == "Release" ]]; then
-  install_resource "${PODS_ROOT}/../../commonui/build/compose/ios/commonui/compose-resources"
   install_resource "${PODS_ROOT}/../../hmage/build/compose/ios/hmage/compose-resources"
 fi
 
