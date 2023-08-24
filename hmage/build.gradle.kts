@@ -61,6 +61,7 @@ kotlin {
             dependencies {
                 implementation(kotlin("test"))
                 implementation(libs.okio.fakefilesystem)
+                implementation(libs.kotlinx.datetime)
             }
         }
 

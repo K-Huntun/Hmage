@@ -10,13 +10,21 @@ import io.ktor.client.statement.request
 import io.ktor.http.HttpStatusCode
 import top.heiha.huntun.hmage.cache.PersistentCacheStorage
 import top.heiha.huntun.hmage.cache.memoryCache
+import top.heiha.huntun.hmage.filesystemt.cachePath
+import top.heiha.huntun.hmage.filesystemt.fileSystem
 import top.heiha.huntun.hmage.utils.getAvailableCacheSpace
 import top.heiha.huntun.hmage.utils.toImageBitmap
 
 internal val httpClient by lazy {
     HttpClient {
         install(HttpCache) {
-            publicStorage(PersistentCacheStorage(getAvailableCacheSpace()))
+            publicStorage(
+                PersistentCacheStorage(
+                    getAvailableCacheSpace(),
+                    fileSystem,
+                    cachePath.resolve("network_cache")
+                )
+            )
         }
     }
 }

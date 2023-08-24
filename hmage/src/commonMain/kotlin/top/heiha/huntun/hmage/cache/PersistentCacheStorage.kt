@@ -13,18 +13,20 @@ import kotlinx.datetime.Clock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import okio.FileSystem
 import okio.Path
 import top.heiha.huntun.hmage.TAG
-import top.heiha.huntun.hmage.filesystemt.cachePath
-import top.heiha.huntun.hmage.filesystemt.fileSystem
 
-class PersistentCacheStorage(maxCacheSize: Long) : CacheStorage {
-//    private val lruLock = Mutex()
+class PersistentCacheStorage(
+    maxCacheSize: Long,
+    private val fileSystem: FileSystem,
+    private val networkCacheDirectory: Path
+) : CacheStorage {
+    //    private val lruLock = Mutex()
 //    private val readLock = Mutex()
 //    private val writeLock = Mutex()
 //    private val readLocks = mutableMapOf<String, AtomicRef<Boolean>>()
 //    private val writeLocks = mutableMapOf<String, AtomicRef<Boolean>>()
-    private val networkCacheDirectory = cachePath.resolve("network_cache")
     private val lru = linkedSetOf<String>()
     private var maxCacheSize = maxCacheSize
 
