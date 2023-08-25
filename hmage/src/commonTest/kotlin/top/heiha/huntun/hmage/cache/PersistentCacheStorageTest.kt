@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import okio.Path.Companion.toPath
@@ -170,12 +171,12 @@ class PersistentCacheStorageTest {
             runBlocking {
                 cacheTestImage(url, data)
                 (0 until 100).forEach {
-                    async {
+                    val get = async {
                         withContext(Dispatchers.IO) {
                             cacheTestImage(url, data)
                         }
                     }
-                    async {
+                    val put = async {
                         withContext(Dispatchers.IO) {
                             val byteArray = storage.find(url, emptyMap())!!.body
                             assertTrue(
@@ -184,6 +185,8 @@ class PersistentCacheStorageTest {
                             )
                         }
                     }
+                    get.await()
+                    put.await()
                 }
             }
         } catch (t: Throwable) {
