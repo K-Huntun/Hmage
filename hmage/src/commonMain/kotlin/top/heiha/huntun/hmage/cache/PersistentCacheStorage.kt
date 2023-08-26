@@ -9,8 +9,13 @@ import io.ktor.http.HttpProtocolVersion
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Url
 import io.ktor.util.date.GMTDate
+import kotlinx.atomicfu.AtomicBoolean
+import kotlinx.atomicfu.atomic
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.Clock
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okio.FileSystem
@@ -22,29 +27,30 @@ class PersistentCacheStorage(
     private val fileSystem: FileSystem,
     private val networkCacheDirectory: Path
 ) : CacheStorage {
-    //    private val lruLock = Mutex()
-//    private val readLock = Mutex()
-//    private val writeLock = Mutex()
-//    private val readLocks = mutableMapOf<String, AtomicRef<Boolean>>()
-//    private val writeLocks = mutableMapOf<String, AtomicRef<Boolean>>()
-    private val lru = linkedSetOf<String>()
+    private val locksLock = Mutex()
+    private val readLocks = mutableMapOf<String, AtomicBoolean>()
+    private val writeLocks = mutableMapOf<String, AtomicBoolean>()
+
+    @Transient
+    private var rc = 0
     private var maxCacheSize = maxCacheSize
 
-//    private suspend fun getReadLock(key: String): AtomicRef<Boolean> {
-//        return readLock.withLock {
-//            readLocks.getOrPut(key) {
-//                AtomicRef(false)
-//            }
-//        }
-//    }
-//
-//    private suspend fun getWriteLock(key: String): AtomicRef<Boolean> {
-//        return writeLock.withLock {
-//            writeLocks.getOrPut(key) {
-//                AtomicRef(false)
-//            }
-//        }
-//    }
+    private suspend fun getReadLock(key: String): AtomicBoolean {
+        return locksLock.withLock {
+            readLocks.getOrPut(key) {
+                atomic(false)
+            }
+
+        }
+    }
+
+    private suspend fun getWriteLock(key: String): AtomicBoolean {
+        return locksLock.withLock {
+            writeLocks.getOrPut(key) {
+                atomic(false)
+            }
+        }
+    }
 
     override suspend fun find(
         url: Url,
@@ -56,44 +62,75 @@ class PersistentCacheStorage(
     }
 
     override suspend fun findAll(url: Url): Set<CachedResponseData> {
-        logd(TAG, "findAll key: $url, hashcode: ${url.hashCode()}")
-        val cacheFilePath = fileSystem.listOrNull(networkCacheDirectory)?.find {
-            it.name.startsWith(url.hashCode().toString())
+        val key = url.toKey()
+        val readLock = getReadLock(key)
+        val writeLock = getWriteLock(key)
+        while (readLock.compareAndSet(expect = false, update = true).not());
+        if (rc == 0) {
+            while (writeLock.compareAndSet(expect = false, update = true).not());
         }
-        return if (cacheFilePath != null) {
-            fileSystem.read(cacheFilePath) {
-                readUtf8()
-            }.let { jsonString ->
-                try {
-                    val result = Json.decodeFromString<PersistentResponseData>(jsonString).toCache()
-                    updateLastAccessTime(url, cacheFilePath)
-                    result
-                } catch (tr: Throwable) {
-                    logw(TAG, "load local chache failed", tr)
-                    null
-                }
-            }?.let {
-                setOf(it)
-                // update last access time
-            } ?: emptySet()
-        } else {
-            emptySet()
+        rc++
+        readLock.value = false
+
+        // read
+        val result = try {
+            logd(TAG, "findAll key: $url, hashcode: ${url.hashCode()}")
+            val cacheFilePath = fileSystem.listOrNull(networkCacheDirectory)?.find {
+                it.name.startsWith(url.hashCode().toString())
+            }
+            if (cacheFilePath != null) {
+                fileSystem.read(cacheFilePath) {
+                    readUtf8()
+                }.let { jsonString ->
+                    try {
+                        val result =
+                            Json.decodeFromString<PersistentResponseData>(jsonString).toCache()
+                        updateLastAccessTime(url, cacheFilePath)
+                        result
+                    } catch (tr: Throwable) {
+                        logw(TAG, "load local chache failed", tr)
+                        null
+                    }
+                }?.let {
+                    setOf(it)
+                    // update last access time
+                } ?: emptySet()
+            } else {
+                emptySet()
+            }
+        } finally {
+            while (readLock.compareAndSet(expect = false, update = true).not());
+            rc--
+            if (rc == 0) {
+                writeLock.value = false
+            }
+            readLock.value = false
         }
+
+        return result
     }
 
     override suspend fun store(url: Url, data: CachedResponseData) {
-        val key = url.hashCode().toString()
-//        if (getWriteLock(key).getAndSet(true).not() && getReadLock(key).value.not()) {
-        logd(TAG, "store cache, key: $url, hashcode: ${url.hashCode()}")
-        createDirectoriesIfNotExists(networkCacheDirectory)
-        fileSystem.write(generateCachePath(url)) {
-            writeUtf8(Json.encodeToString(data.toPersistent()))
+        val key = url.toKey()
+        val writeLock = getWriteLock(key)
+        while (writeLock.compareAndSet(
+                expect = false,
+                update = true
+            ).not()
+        );
+        try {
+            logd(TAG, "store cache, key: $url, hashcode: ${url.hashCode()}")
+            createDirectoriesIfNotExists(networkCacheDirectory)
+            fileSystem.write(generateCachePath(url)) {
+                writeUtf8(Json.encodeToString(data.toPersistent()))
+            }
+            trim()
+        } finally {
+            writeLock.value = false
         }
-        trim()
-//        }
     }
 
-    internal fun generateCachePath(url: Url): Path {
+    private fun generateCachePath(url: Url): Path {
         return networkCacheDirectory.resolve(
             "${url.hashCode()}_${
                 Clock.System.now().toEpochMilliseconds()
@@ -116,27 +153,40 @@ class PersistentCacheStorage(
     }
 
     private fun trim() {
-        fileSystem.listOrNull(networkCacheDirectory)?.sortedBy {
+        // 71467
+        fileSystem.listOrNull(networkCacheDirectory)?.sortedByDescending {
             it.name.substringBeforeLast(".").substringAfter("_").toLong()
         }?.let { sortedList ->
-            var totalSize = fileSystem.metadata(networkCacheDirectory).size ?: 0
+            var totalSize = 0L
+            var flag = false
             val iterator = sortedList.iterator()
-            while (totalSize > maxCacheSize) {
-                if (iterator.hasNext()) {
-                    val file = iterator.next()
-                    totalSize -= fileSystem.metadata(file).size ?: 0
+            while (iterator.hasNext()) {
+                val file = iterator.next()
+                if (flag) {
                     fileSystem.delete(file)
+                } else {
+                    val fileSize = fileSystem.metadata(file).size ?: 0
+                    logd(TAG, "fileSize: $fileSize")
+                    if (totalSize + fileSize > maxCacheSize) {
+                        fileSystem.delete(file)
+                        flag = true
+                    } else {
+                        totalSize += fileSize
+                    }
                 }
             }
         }
     }
 
-    private fun updateMaxCacheSize(maxCacheSize: Long) {
+    fun updateMaxCacheSize(maxCacheSize: Long) {
         this.maxCacheSize = maxCacheSize
         trim()
     }
 
+    private fun Url.toKey() = hashCode().toString()
+
 }
+
 
 internal fun CachedResponseData.toPersistent(): PersistentResponseData = PersistentResponseData(
     url = this.url.toString(),

@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.android) apply false
     alias(libs.plugins.jetbrains.compose) apply false
     alias(libs.plugins.kotlin.plugin.serialization) apply false
+    alias(libs.plugins.kotlinx.atomicfun) apply false
 }
 
 tasks.register("clean", Delete::class) {

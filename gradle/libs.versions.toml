@@ -33,6 +33,7 @@ uuid = "com.benasher44:uuid:0.7.1"
 corountines-core = "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.1"
 kotlinx-serialization-json = "org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.1"
 kotlinx-datetime = "org.jetbrains.kotlinx:kotlinx-datetime:0.4.0"
+kotlinx-atomicfun = "org.jetbrains.kotlinx:atomicfu:0.21.0"
 
 #kotlinx-coroutines-test = "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.5.1"
 
@@ -49,6 +50,8 @@ ksp = { id="com.google.devtools.ksp", version.ref="ksp" }
 kotlin-cocoapods = { id="org.jetbrains.kotlin.native.cocoapods", version.ref="kotlinVersion" }
 jetbrains-compose = { id="org.jetbrains.compose", version.ref="jetbrainsCompose" }
 mockmp = { id="org.kodein.mock.mockmp", version="1.13.0"}
+kotlinx-atomicfun = { id="org.jetbrains.kotlin.plugin.atomicfu", version.ref="kotlinVersion" }
+
 
 [bundles]
 test-jvm = [

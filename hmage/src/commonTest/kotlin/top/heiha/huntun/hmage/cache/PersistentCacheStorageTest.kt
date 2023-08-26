@@ -12,8 +12,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.supervisorScope
-import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import okio.Path.Companion.toPath
 import okio.fakefilesystem.FakeFileSystem
@@ -22,6 +20,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
@@ -110,7 +109,7 @@ class PersistentCacheStorageTest {
             runBlocking {
                 cacheTestImage(url, data)
                 (0 until 100).forEach { _ ->
-                    withContext(Dispatchers.IO) {
+                    async(Dispatchers.IO) {
                         val byteArray = storage.find(url, emptyMap())!!.body
                         assertTrue(
                             byteArray.isNotEmpty(),
@@ -142,7 +141,7 @@ class PersistentCacheStorageTest {
         try {
             runBlocking {
                 (0 until 100).forEach { _ ->
-                    withContext(Dispatchers.IO) {
+                    async(Dispatchers.IO) {
                         cacheTestImage(url, data)
                     }
                 }
@@ -172,12 +171,12 @@ class PersistentCacheStorageTest {
                 cacheTestImage(url, data)
                 (0 until 100).forEach {
                     val get = async {
-                        withContext(Dispatchers.IO) {
+                        async(Dispatchers.IO) {
                             cacheTestImage(url, data)
                         }
                     }
                     val put = async {
-                        withContext(Dispatchers.IO) {
+                        async(Dispatchers.IO) {
                             val byteArray = storage.find(url, emptyMap())!!.body
                             assertTrue(
                                 byteArray.isNotEmpty(),
@@ -193,6 +192,153 @@ class PersistentCacheStorageTest {
             fail("concurrency rw failed", t)
         }
 
+    }
+
+    @Test
+    fun testOverMaxSize() {
+        try {
+            storage.updateMaxCacheSize(122876)
+            val url1 = Url("https://www.test.com/test1.jpg")
+            val data1 = CachedResponseData(
+                url1,
+                HttpStatusCode.OK,
+                GMTDate(Clock.System.now().toEpochMilliseconds() - 4000L),
+                GMTDate(Clock.System.now().toEpochMilliseconds() - 3000L),
+                version = HttpProtocolVersion.HTTP_2_0,
+                expires = GMTDate(Clock.System.now().toEpochMilliseconds() + 24 * 3600 * 1000L),
+                headers = HeadersBuilder().build(),
+                varyKeys = emptyMap(),
+                body = readResourceImage("placeholder.png")
+            )
+            val url2 = Url("https://www.test.com/test2.jpg")
+            val data2 = CachedResponseData(
+                url2,
+                HttpStatusCode.OK,
+                GMTDate(Clock.System.now().toEpochMilliseconds() - 4000L),
+                GMTDate(Clock.System.now().toEpochMilliseconds() - 3000L),
+                version = HttpProtocolVersion.HTTP_2_0,
+                expires = GMTDate(Clock.System.now().toEpochMilliseconds() + 24 * 3600 * 1000L),
+                headers = HeadersBuilder().build(),
+                varyKeys = emptyMap(),
+                body = readResourceImage("error.png")
+            )
+            runBlocking {
+                storage.store(url1, data1)
+                storage.store(url2, data2)
+                assertNull(storage.find(url1, emptyMap()), "The cache with url1 as key should be removed")
+                assertNotNull(storage.find(url2, emptyMap()), "The cache with url2 as key should be retain")
+            }
+        } finally {
+            storage.updateMaxCacheSize(10 * 1024 * 1024)
+        }
+
+    }
+
+    @Test
+    fun testPriority() {
+        try {
+            storage.updateMaxCacheSize(300_000)
+            val url1 = Url("https://www.test.com/test1.jpg")
+            val data1 = CachedResponseData(
+                url1,
+                HttpStatusCode.OK,
+                GMTDate(Clock.System.now().toEpochMilliseconds() - 4000L),
+                GMTDate(Clock.System.now().toEpochMilliseconds() - 3000L),
+                version = HttpProtocolVersion.HTTP_2_0,
+                expires = GMTDate(Clock.System.now().toEpochMilliseconds() + 24 * 3600 * 1000L),
+                headers = HeadersBuilder().build(),
+                varyKeys = emptyMap(),
+                body = readResourceImage("placeholder.png")
+            )
+            val url2 = Url("https://www.test.com/test2.jpg")
+            val data2 = CachedResponseData(
+                url2,
+                HttpStatusCode.OK,
+                GMTDate(Clock.System.now().toEpochMilliseconds() - 4000L),
+                GMTDate(Clock.System.now().toEpochMilliseconds() - 3000L),
+                version = HttpProtocolVersion.HTTP_2_0,
+                expires = GMTDate(Clock.System.now().toEpochMilliseconds() + 24 * 3600 * 1000L),
+                headers = HeadersBuilder().build(),
+                varyKeys = emptyMap(),
+                body = readResourceImage("error.png")
+            )
+            val url3 = Url("https://www.test.com/test3.jpg")
+            val data3 = CachedResponseData(
+                url3,
+                HttpStatusCode.OK,
+                GMTDate(Clock.System.now().toEpochMilliseconds() - 4000L),
+                GMTDate(Clock.System.now().toEpochMilliseconds() - 3000L),
+                version = HttpProtocolVersion.HTTP_2_0,
+                expires = GMTDate(Clock.System.now().toEpochMilliseconds() + 24 * 3600 * 1000L),
+                headers = HeadersBuilder().build(),
+                varyKeys = emptyMap(),
+                body = readResourceImage("test.png")
+            )
+            runBlocking {
+                storage.store(url1, data1)
+                storage.store(url2, data2)
+                storage.find(url1, emptyMap())
+                storage.store(url3, data3)
+                assertNotNull(storage.find(url1, emptyMap()), "The cache with url1 as key should be retain")
+                assertNull(storage.find(url2, emptyMap()), "The cache with url2 as key should be removed")
+                assertNotNull(storage.find(url3, emptyMap()), "The cache with url3 as key should be retain")
+            }
+        } finally {
+            storage.updateMaxCacheSize(10 * 1024 * 1024)
+        }
+    }
+
+    @Test
+    fun testTrim() {
+        try {
+            val url1 = Url("https://www.test.com/test1.jpg")
+            val data1 = CachedResponseData(
+                url1,
+                HttpStatusCode.OK,
+                GMTDate(Clock.System.now().toEpochMilliseconds() - 4000L),
+                GMTDate(Clock.System.now().toEpochMilliseconds() - 3000L),
+                version = HttpProtocolVersion.HTTP_2_0,
+                expires = GMTDate(Clock.System.now().toEpochMilliseconds() + 24 * 3600 * 1000L),
+                headers = HeadersBuilder().build(),
+                varyKeys = emptyMap(),
+                body = readResourceImage("placeholder.png")
+            )
+            val url2 = Url("https://www.test.com/test2.jpg")
+            val data2 = CachedResponseData(
+                url2,
+                HttpStatusCode.OK,
+                GMTDate(Clock.System.now().toEpochMilliseconds() - 4000L),
+                GMTDate(Clock.System.now().toEpochMilliseconds() - 3000L),
+                version = HttpProtocolVersion.HTTP_2_0,
+                expires = GMTDate(Clock.System.now().toEpochMilliseconds() + 24 * 3600 * 1000L),
+                headers = HeadersBuilder().build(),
+                varyKeys = emptyMap(),
+                body = readResourceImage("error.png")
+            )
+            val url3 = Url("https://www.test.com/test3.jpg")
+            val data3 = CachedResponseData(
+                url3,
+                HttpStatusCode.OK,
+                GMTDate(Clock.System.now().toEpochMilliseconds() - 4000L),
+                GMTDate(Clock.System.now().toEpochMilliseconds() - 3000L),
+                version = HttpProtocolVersion.HTTP_2_0,
+                expires = GMTDate(Clock.System.now().toEpochMilliseconds() + 24 * 3600 * 1000L),
+                headers = HeadersBuilder().build(),
+                varyKeys = emptyMap(),
+                body = readResourceImage("test.png")
+            )
+            runBlocking {
+                storage.store(url1, data1)
+                storage.store(url2, data2)
+                storage.store(url3, data3)
+                storage.updateMaxCacheSize(300_000)
+                assertNull(storage.find(url1, emptyMap()), "The cache with url1 as key should be removed")
+                assertNotNull(storage.find(url2, emptyMap()), "The cache with url2 as key should be retain")
+                assertNotNull(storage.find(url3, emptyMap()), "The cache with url3 as key should be retain")
+            }
+        } finally {
+            storage.updateMaxCacheSize(10 * 1024 * 1024)
+        }
     }
 
 

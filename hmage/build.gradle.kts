@@ -1,9 +1,12 @@
+import org.gradle.configurationcache.extensions.capitalized
+
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.cocoapods)
     alias(libs.plugins.android.library)
     alias(libs.plugins.jetbrains.compose)
     alias(libs.plugins.kotlin.plugin.serialization)
+    alias(libs.plugins.kotlinx.atomicfun)
     id("convention.publication")
 }
 
@@ -55,6 +58,7 @@ kotlin {
                 implementation(libs.uuid)
                 implementation(libs.kotlinx.serialization.json)
                 implementation(libs.kotlinx.datetime)
+                implementation(libs.kotlinx.atomicfun)
             }
         }
         val commonTest by getting {
@@ -134,7 +138,24 @@ android {
     sourceSets["main"].res.srcDirs("src/androidMain/res")
     sourceSets["main"].resources.srcDirs("src/commonMain/resources", "src/androidMain/resources")
     sourceSets["main"].manifest.srcFile("src/androidMain/AndroidManifest.xml")
+//    sourceSets["unitTest"].resources.srcDirs("src/commonTest/resources", "src/androidUnitTest/resources")
+//    sourceSets["androidTest"].resources.srcDirs("src/commonTest/resources", "src/androidInstrumentedTest/resources")
+
 }
 
 group = "top.heiha.huntun.hmage"
 version = "0.0.1-dev"
+
+afterEvaluate {
+    listOf("debug", "release").forEach { variant ->
+        val copyTaskName = "copyResource${variant.capitalized()}UnitTest"
+        tasks.register<Copy>(copyTaskName) {
+            from("$projectDir/src/commonTest/resources")
+            into("$buildDir/tmp/kotlin-classes/${variant}UnitTest")
+            mustRunAfter(tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>())
+        }
+        tasks.getByName("test${variant.capitalized()}UnitTest") {
+            dependsOn(copyTaskName)
+        }
+    }
+}

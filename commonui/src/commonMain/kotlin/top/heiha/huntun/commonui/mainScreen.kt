@@ -20,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import org.jetbrains.compose.resources.ExperimentalResourceApi
 import top.heiha.huntun.hmage.Hmage
 import top.heiha.huntun.hmage.StatedImageSource
 
@@ -28,6 +29,7 @@ fun MainScreen() {
     RadioButtonSample()
 }
 
+@OptIn(ExperimentalResourceApi::class)
 @Composable
 fun RadioButtonSample() {
     val radioOptions = listOf(
@@ -89,7 +91,8 @@ fun RemoteImageWithPlaceholderAndError() {
             placeholder = "placeholder.png",
             error = "error.png"
         ), contentDescription = ""
-    )}
+    )
+}
 
 //<a href="https://www.flaticon.com/free-stickers/people" title="people stickers">People stickers created by Stickers - Flaticon</a>
 @Composable
