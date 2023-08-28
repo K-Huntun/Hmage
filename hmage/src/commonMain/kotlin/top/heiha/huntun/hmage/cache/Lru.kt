@@ -1,8 +1,13 @@
 package top.heiha.huntun.hmage.cache
 
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
 internal class Lru<K, V>(maxSize: Long) {
     private var maxSize: Long = maxSize
     private var size: Long = 0L
+    private val lock = Mutex()
 
     /**
      * +-----+-----+
@@ -16,29 +21,53 @@ internal class Lru<K, V>(maxSize: Long) {
     var sizeOf: (K, V) -> Long = { _, _ -> 1L }
 
     operator fun get(key: K): V? {
-        val value = bulk.remove(key)
-        if (value != null) {
-            bulk[key] = value
+        return runBlocking {
+            lock.withLock {
+                val value = bulk.remove(key)
+                if (value != null) {
+                    bulk[key] = value
+                }
+                value
+            }
         }
-        return value
     }
 
     operator fun set(key: K, value: V) {
-        val oldValue = bulk.remove(key)
-        bulk[key] = value
-        val updatedSize = if (oldValue != null) {
-            size - sizeOf(key, oldValue) + sizeOf(key, value)
-        } else {
-            size + sizeOf(key, value)
+        runBlocking {
+            val oldValue = lock.withLock {
+                val oldValue = bulk.remove(key)
+                bulk[key] = value
+                oldValue
+            }
+            if (oldValue != value) {
+                val updatedSize = if (oldValue != null) {
+                    size - sizeOf(key, oldValue) + sizeOf(key, value)
+                } else {
+                    size + sizeOf(key, value)
+                }
+                size = update(updatedSize, maxSize)
+            }
         }
-        size = update(updatedSize, maxSize)
+    }
+
+    internal operator fun minusAssign(key: K) {
+        runBlocking {
+            val value = bulk.remove(key)
+            if (value != null) {
+                size -= sizeOf(key, value)
+            }
+        }
     }
 
     fun maxSize(maxSize: Long) {
-        if (maxSize < this.maxSize) {
-            size = update(size, maxSize)
+        runBlocking {
+            lock.withLock {
+                if (maxSize < this@Lru.maxSize) {
+                    size = update(size, maxSize)
+                }
+                this@Lru.maxSize = maxSize
+            }
         }
-        this.maxSize = maxSize
     }
 
     private fun update(totalSize: Long, maxSize: Long): Long {
@@ -57,4 +86,11 @@ internal class Lru<K, V>(maxSize: Long) {
 
         return totalSize
     }
+
+    suspend fun asIterable(): Iterable<Pair<K, V>>  {
+        return lock.withLock {
+            bulk.entries.map { Pair(it.key, it.value) }
+        }
+    }
+
 }

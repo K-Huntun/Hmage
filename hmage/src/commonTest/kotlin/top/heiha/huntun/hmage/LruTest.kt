@@ -1,8 +1,15 @@
 package qiaqia
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
 import top.heiha.huntun.hmage.cache.Lru
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.fail
 
 class LruTest {
 
@@ -71,5 +78,81 @@ class LruTest {
         assertEquals(null, lru[2])
         assertEquals(3, lru[3])
         assertEquals(4, lru[4])
+    }
+
+    @Test
+    fun testConcurrencyWrite() {
+        val lru = Lru<Int, Int>(100)
+        try {
+            runBlocking {
+                (0 until 100).forEach {
+                    async(Dispatchers.IO) {
+                        lru[it] = it
+                    }
+                }
+                (0 until 100).forEach {
+                    assertNotNull(lru[it], "$it should exist")
+                }
+            }
+        } catch (t: Throwable) {
+            fail("Concurrency write failed.", t)
+        }
+
+    }
+
+    @Test
+    fun testConcurrencyRead() {
+        val lru = Lru<Int, Int>(100)
+        try {
+            runBlocking {
+                (0 until 100).forEach {
+                    async(Dispatchers.IO) {
+                        lru[it] = it
+                    }
+                }
+                (0 until 100).forEach {
+                    async(Dispatchers.IO) {
+                        assertNotNull(lru[it], "$it should exist")
+                    }
+                }
+            }
+        } catch (t: Throwable) {
+            fail("Concurrency read failed.", t)
+        }
+
+    }
+
+    @Test
+    fun testConcurrencyRW() {
+        val lru = Lru<Int, Int>(100)
+        try {
+            runBlocking {
+                (0 until 50).forEach {
+                    lru[it] = it
+                }
+                val w = async(Dispatchers.IO) {
+                    (50 until 100).forEach { it
+                        async(Dispatchers.IO) {
+                            lru[it] = it
+                        }
+                    }
+                }
+
+                async(Dispatchers.IO) {
+                    (0 until 50).forEach {
+                        async(Dispatchers.IO) {
+                            assertNotNull(lru[it], "$it should exist")
+                        }
+                    }
+                }
+                w.await()
+                (50 until 100).forEach {
+                    assertNotNull(lru[it], "$it should exist")
+                }
+            }
+        } catch (t: Throwable) {
+            fail("Concurrency read failed.", t)
+        }
+
     }
 }

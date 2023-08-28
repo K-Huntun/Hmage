@@ -105,6 +105,7 @@ kotlin {
         }
 
         val iosSimulatorArm64Test by getting
+        val iosX64Test by getting
         val iosTest by getting {
             iosSimulatorArm64Test.dependsOn(this)
             dependencies {
@@ -148,7 +149,7 @@ version = "0.0.1-dev"
 
 afterEvaluate {
     listOf("debug", "release").forEach { variant ->
-        val copyTaskName = "copyResource${variant.capitalized()}UnitTest"
+        val copyTaskName = "copyResources${variant.capitalized()}UnitTest"
         tasks.register<Copy>(copyTaskName) {
             from("$projectDir/src/commonTest/resources")
             into("$buildDir/tmp/kotlin-classes/${variant}UnitTest")
@@ -158,4 +159,18 @@ afterEvaluate {
             dependsOn(copyTaskName)
         }
     }
+
+    listOf("simulatorArm64", "x64").forEach { target ->
+        val taskName = "copyResources${target.capitalized()}DebugTest"
+        tasks.register<Copy>(taskName) {
+            from("$projectDir/src/commonTest/resources")
+            into("$buildDir/bin/ios${target.capitalized()}/debugTest/compose-resources")
+        }
+        tasks.getByName("ios${target.capitalized()}Test") {
+            dependsOn(taskName)
+        }
+    }
+
+
+
 }
